@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::util::time_service::{ScheduledTask, TimeService};
-use futures::{Future, FutureExt};
-use logger::prelude::*;
+use libra_logger::prelude::*;
 use std::{
-    pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -62,16 +60,13 @@ impl TimeService for SimulatedTimeService {
         self.inner.lock().unwrap().now
     }
 
-    fn sleep(&self, t: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn sleep(&self, t: Duration) {
         let inner = self.inner.clone();
-        let fut = async move {
-            let mut inner = inner.lock().unwrap();
-            inner.now += t;
-            if inner.now > inner.max {
-                inner.now = inner.max;
-            }
-        };
-        fut.boxed()
+        let mut inner = inner.lock().unwrap();
+        inner.now += t;
+        if inner.now > inner.max {
+            inner.now = inner.max;
+        }
     }
 }
 
@@ -84,18 +79,6 @@ impl SimulatedTimeService {
                 pending: vec![],
                 time_limit: Duration::from_secs(0),
                 max: Duration::from_secs(std::u64::MAX),
-            })),
-        }
-    }
-
-    /// Creates new SimulatedTimeService in disabled state (time not running) with a max duration
-    pub fn max(max: Duration) -> SimulatedTimeService {
-        SimulatedTimeService {
-            inner: Arc::new(Mutex::new(SimulatedTimeServiceInner {
-                now: Duration::from_secs(0),
-                pending: vec![],
-                time_limit: Duration::from_secs(0),
-                max,
             })),
         }
     }
@@ -119,9 +102,16 @@ impl SimulatedTimeService {
         let mut inner = self.inner.lock().unwrap();
         inner.time_limit += time;
         let time_limit = inner.time_limit;
-        let drain = inner
-            .pending
-            .drain_filter(move |(deadline, _)| *deadline <= time_limit);
+        let mut i = 0;
+        let mut drain = vec![];
+        while i != inner.pending.len() {
+            let deadline = inner.pending[i].0;
+            if deadline <= time_limit {
+                drain.push(inner.pending.remove(i));
+            } else {
+                i += 1;
+            }
+        }
         for (_, mut t) in drain {
             // probably could be done better then that, but for now I feel its good enough for tests
             futures::executor::block_on(t.run());

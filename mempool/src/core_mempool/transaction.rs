@@ -1,11 +1,12 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::proto::shared::mempool_status::MempoolAddTransactionStatusCode;
-use failure::prelude::*;
-use proto_conv::{FromProto, IntoProto};
+use libra_types::{
+    account_address::AccountAddress,
+    transaction::{GovernanceRole, SignedTransaction},
+};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use types::{account_address::AccountAddress, transaction::SignedTransaction};
 
 #[derive(Clone)]
 pub struct MempoolTransaction {
@@ -13,7 +14,9 @@ pub struct MempoolTransaction {
     // system expiration time of transaction. It should be removed from mempool by that time
     pub expiration_time: Duration,
     pub gas_amount: u64,
+    pub ranking_score: u64,
     pub timeline_state: TimelineState,
+    pub governance_role: GovernanceRole,
 }
 
 impl MempoolTransaction {
@@ -21,13 +24,17 @@ impl MempoolTransaction {
         txn: SignedTransaction,
         expiration_time: Duration,
         gas_amount: u64,
+        ranking_score: u64,
         timeline_state: TimelineState,
+        governance_role: GovernanceRole,
     ) -> Self {
         Self {
             txn,
             gas_amount,
+            ranking_score,
             expiration_time,
             timeline_state,
+            governance_role,
         }
     }
     pub(crate) fn get_sequence_number(&self) -> u64 {
@@ -41,7 +48,7 @@ impl MempoolTransaction {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Hash, Serialize)]
 pub enum TimelineState {
     // transaction is ready for broadcast
     // Associated integer represents it's position in log of such transactions
@@ -52,45 +59,4 @@ pub enum TimelineState {
     // transaction will never be qualified for broadcasting
     // currently we don't broadcast transactions originated on other peers
     NonQualified,
-}
-
-/// Status of transaction insertion operation
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct MempoolAddTransactionStatus {
-    /// Status code of the transaction insertion operation
-    pub code: MempoolAddTransactionStatusCode,
-    /// Message to give more details about the transaction insertion operation
-    pub message: String,
-}
-
-impl MempoolAddTransactionStatus {
-    /// Create a new MempoolAddTransactionStatus
-    pub fn new(code: MempoolAddTransactionStatusCode, message: String) -> Self {
-        Self { code, message }
-    }
-}
-
-//***********************************
-// Decoding/Encoding to Protobuffers
-//***********************************
-impl IntoProto for MempoolAddTransactionStatus {
-    type ProtoType = crate::proto::shared::mempool_status::MempoolAddTransactionStatus;
-
-    fn into_proto(self) -> Self::ProtoType {
-        let mut mempool_add_transaction_status = Self::ProtoType::new();
-        mempool_add_transaction_status.set_message(self.message);
-        mempool_add_transaction_status.set_code(self.code);
-        mempool_add_transaction_status
-    }
-}
-
-impl FromProto for MempoolAddTransactionStatus {
-    type ProtoType = crate::proto::shared::mempool_status::MempoolAddTransactionStatus;
-
-    fn from_proto(proto: Self::ProtoType) -> Result<Self> {
-        Ok(MempoolAddTransactionStatus::new(
-            proto.get_code(),
-            proto.get_message().to_string(),
-        ))
-    }
 }
